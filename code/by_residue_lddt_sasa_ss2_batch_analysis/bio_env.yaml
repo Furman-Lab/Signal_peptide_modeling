@@ -1,0 +1,12 @@
+name: bio_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pandas
+  - numpy
+  - biopython
+  - pip
+  - pip:
+    - pydssp

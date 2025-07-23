@@ -1,0 +1,70 @@
+import os
+
+BATCH_DIR = "chess_batch_dir"
+OUTPUT_DIR = "batch_by_residue_output"
+TOTAL_BATCHES = 238  # Set this to the number of batches you have
+
+def get_next_batch():
+    if os.path.exists("processed_batches.txt"):
+        with open("processed_batches.txt", "r") as f:
+            processed = set(int(line.strip()) for line in f)
+    else:
+        processed = set()
+
+    for i in range(TOTAL_BATCHES):
+        if i not in processed:
+            return i
+    return None
+
+batch = get_next_batch()
+print(batch)
+
+if batch is not None:
+    BATCH_PDB_DIR = os.path.join(BATCH_DIR, f"batch_{batch}")
+    PDB_FILES = [f for f in os.listdir(BATCH_PDB_DIR) if f.endswith(".pdb")]
+
+    rule all:
+        input:
+            expand(os.path.join(OUTPUT_DIR, "{pdb}_sasa_lddt_ss.tsv"), pdb=[os.path.splitext(pdb)[0] for pdb in PDB_FILES])
+
+    rule compute_sasa_lddt:
+        input:
+            pdb = os.path.join(BATCH_PDB_DIR, "{pdb}.pdb")
+        output:
+            tsv = os.path.join(OUTPUT_DIR, "{pdb}_sasa_lddt.tsv")
+        log:
+            os.path.join(OUTPUT_DIR, "logs", "{pdb}_sasa_lddt.log")
+        conda:
+            "envs/bio_env.yaml"
+        shell:
+            "python scripts/by_residue_pdb_analysis.py {input.pdb} {output.tsv} > {log} 2>&1"
+
+    rule compute_dssp:
+        input:
+            pdb = os.path.join(BATCH_PDB_DIR, "{pdb}.pdb")
+        output:
+            ss = os.path.join(OUTPUT_DIR, "{pdb}_ss.txt")
+        conda:
+            "envs/bio_env.yaml"
+        shell:
+            "pydssp {input.pdb} -o {output.ss}"
+
+    rule combine_by_residue_values:
+        input:
+            sasa = os.path.join(OUTPUT_DIR, "{pdb}_sasa_lddt.tsv"),
+            ss = os.path.join(OUTPUT_DIR, "{pdb}_ss.txt")
+        output:
+            combined = os.path.join(OUTPUT_DIR, "{pdb}_sasa_lddt_ss.tsv")
+        conda:
+            "envs/bio_env.yaml"
+        shell:
+            "python scripts/combine_sasa_ss.py {input.sasa} {input.ss} {OUTPUT_DIR}"
+
+    onsuccess:
+        with open("processed_batches.txt", "a") as f:
+            f.write(f"{batch}\n")
+
+else:
+    rule all:
+        shell:
+            "echo 'All batches have been processed!' > finished_batches.txt"
